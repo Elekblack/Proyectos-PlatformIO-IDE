@@ -469,7 +469,15 @@ public:
         if (parpadeadorAuto) {
             if (millis() >= temporizadorParpadeo) {
                 parpadear();
+                #if defined(ESP32)
+                temporizadorParpadeo = millis() + (intervaloParpadeo * 1000) + ((esp_random() % variacionIntervaloParpadeo) * 1000);
+                #else
+                // WARNING: random() is NOT suitable for cryptographic purposes.
+                // For cryptographic security, use a hardware random number generator or a CSPRNG.
+                // This code is only for non-security-related randomness (e.g., animation).
+                randomSeed(analogRead(0));
                 temporizadorParpadeo = millis() + (intervaloParpadeo * 1000) + (random(variacionIntervaloParpadeo) * 1000);
+                #endif
             }
         }
 
@@ -499,9 +507,20 @@ public:
 
         if (inactivo) {
             if (millis() >= temporizadorAnimacionInactivo) {
-                xOjoI_Siguiente = random(obtenerLimitePantalla_X());
-                yOjoI_Siguiente = random(obtenerLimitePantalla_Y());
-                temporizadorAnimacionInactivo = millis() + (intervaloInactivo * 1000) + (random(variacionIntervaloInactivo) * 1000);
+                #if defined(ESP32)
+                                xOjoI_Siguiente = esp_random() % obtenerLimitePantalla_X();
+                                yOjoI_Siguiente = esp_random() % obtenerLimitePantalla_Y();
+                                // WARNING: esp_random() is NOT suitable for cryptographic purposes.
+                                // This usage is only for non-security-related randomness (e.g., animation).
+                                // Do NOT use this for key, nonce, or any security-related value generation.
+                                temporizadorAnimacionInactivo = millis() + (intervaloInactivo * 1000) + ((esp_random() % variacionIntervaloInactivo) * 1000);
+                #else
+                                xOjoI_Siguiente = random(obtenerLimitePantalla_X());
+                                yOjoI_Siguiente = random(obtenerLimitePantalla_Y());
+                                temporizadorAnimacionInactivo = millis() + (intervaloInactivo * 1000) + (random(variacionIntervaloInactivo) * 1000);
+                #endif
+                xOjoD_Siguiente = xOjoI_Siguiente + anchoOjoI_Actual + espacioEntre_Actual;
+                yOjoD_Siguiente = yOjoI_Siguiente;
             }
         }
 

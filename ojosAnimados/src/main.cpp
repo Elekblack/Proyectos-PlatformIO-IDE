@@ -18,10 +18,27 @@ void setup() {
         while (1);
     }
     ojos.inicializar(SCREEN_WIDTH, SCREEN_HEIGHT, 50, display);
-    ojos.establecerParpadeoAutomatico(true, 2, 3);
     ojos.abrir();
+    delay(2000); // Espera 2 segundos para ver el cambio
 }
 
 void loop() {
     ojos.actualizar();
+    ojos.establecerParpadeoAutomatico(false, 2, 3);
+    ojos.ojoD_abierto = true; // Abre el ojo derecho
+    ojos.ojoI_abierto = true; // Abre el ojo izquierdo  
+    ojos.dibujarOjos();
+    ojos.establecerPosicion(ESTE); // Mira a la derecha 
+    ojos.dibujarOjos();
+    delay(2000); // Espera un segundo para ver el cambio
+    ojos.establecerPosicion(NORTE_ESTE);
+    ojos.dibujarOjos();
+    delay(2000); // Espera un segundo para ver el cambio
+    ojos.establecerPosicion(OESTE); // Mira a la izquierda
+    ojos.dibujarOjos();
+    delay(2000); // Espera un segundo para ver el cambio
+    ojos.establecerPosicion(PREDETERMINADO); // Vuelve al centro
+    ojos.establecerParpadeoAutomatico(true, 2, 3);
+    ojos.dibujarOjos();
+    delay(6000); // Espera un segundo para ver el cambio
 }
