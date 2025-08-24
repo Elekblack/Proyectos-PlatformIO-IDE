@@ -13,7 +13,7 @@
 
 // Define los pines (ajusta según tu conexión)
 // Para ESP32 Devkit V1 30 pines, elige pines PWM como 25, 26, 27, 14 por ejemplo
-RobotDosRuedas robot(25, 26, 27, 14);  // izqAd, izqAt, derAd, derAt
+RobotDosRuedas robot(26, 27, 32, 33);  // izqAd, izqAt, derAd, derAt
 
 BluetoothSerial SerialBT;  // Objeto para Bluetooth
 
@@ -32,35 +32,35 @@ void loop() {
     if (SerialBT.available()) {
         char comando = SerialBT.read();
         switch (comando) {
-            case 'W':
+            case 'F':
                 robot.avanzar(200);  // Velocidad ejemplo
                 SerialBT.println("Avanzando");
                 break;
-            case 'S':
+            case 'B':
                 robot.retroceder(200);
                 SerialBT.println("Retrocediendo");
                 break;
-            case 'A':
+            case 'R':
                 robot.girarIzquierda(150);
                 SerialBT.println("Girando Izquierda");
                 break;
-            case 'D':
+            case 'L':
                 robot.girarDerecha(150);
                 SerialBT.println("Girando Derecha");
                 break;
-            case 'X':
+            case 'S':
                 robot.detener();
                 SerialBT.println("Detenido");
                 break;
-            case 'F':
+            case '1':
                 robot.iniciarAvanzarRecto(200);
                 SerialBT.println("Avanzando Recto");
                 break;
-            case '9':
+            case '2':
                 robot.girarAngulo(90.0);
                 SerialBT.println("Girando 90° Derecha");
                 break;
-            case '0':
+            case '3':
                 robot.girarAngulo(-90.0);
                 SerialBT.println("Girando 90° Izquierda");
                 break;
