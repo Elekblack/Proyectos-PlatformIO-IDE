@@ -12,6 +12,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 OjosRobot ojos;
 
 void setup() {
+    Serial.begin(115200);
     Wire.begin();
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
         Serial.println(F("No se pudo inicializar la pantalla OLED"));

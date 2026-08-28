@@ -54,6 +54,7 @@ private:
     float yawInicial;  // Yaw inicial para mantener rumbo recto
     unsigned long tiempoAnterior;  // Para calcular dt en integración
     float offsetGyroZ;  // Offset calibrado para gyro Z
+    bool mpuDisponible;
 
     // Controladores PID
     ControlPID pidGiro;  // PID para giros angulares
@@ -94,8 +95,9 @@ public:
 
     /**
      * Inicializa el robot: configura pines, inicia Wire y MPU6050, calibra.
+     * @return true si el MPU6050 está disponible.
      */
-    void inicializar();
+    bool inicializar();
 
     /**
      * Movimiento básico: avanzar a la velocidad indicada.
@@ -129,15 +131,18 @@ public:
     /**
      * Gira un ángulo preciso usando PID y MPU6050. Esta función es bloqueante.
      * @param angulo Ángulo en grados (positivo para derecha, negativo para izquierda).
+     * @param tiempoMaximoMs Tiempo límite antes de detener los motores.
+     * @return true si alcanzó el ángulo; false si no hay sensor o venció el tiempo.
      */
-    void girarAngulo(float angulo);
+    bool girarAngulo(float angulo, unsigned long tiempoMaximoMs = 6000);
 
     /**
      * Inicia el avance en línea recta manteniendo el rumbo con PID y MPU6050.
      * Debe llamarse actualizar() en el loop principal para mantener el control.
      * @param velocidad Velocidad base (0-255).
+     * @return true si el MPU6050 está disponible y el modo pudo iniciarse.
      */
-    void iniciarAvanzarRecto(int velocidad);
+    bool iniciarAvanzarRecto(int velocidad);
 
     /**
      * Función de actualización que debe llamarse en el loop principal para modos avanzados.

@@ -28,8 +28,8 @@ class Robot2Ruedas {
     void girar_izquierda(int velocidad);
     void detener();
 
-    // Función para girar a un ángulo específico
-    void girar_a_angulo(float anguloObjetivo, int velocidad);
+    // Gira a un ángulo y devuelve false si vence el tiempo de seguridad.
+    bool girar_a_angulo(float anguloObjetivo, int velocidad, unsigned long tiempoMaximoMs = 6000);
 
     // Mostrar mensajes en OLED
     void mostrarMensaje(String linea1, String linea2 = "");

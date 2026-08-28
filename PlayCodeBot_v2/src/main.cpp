@@ -3,6 +3,7 @@
 #include <BluetoothSerial.h>
 #include <MPU6050_light.h>
 #include <Adafruit_SSD1306.h>
+#include "ComandosRobot.h"
 #include "Robot2Ruedas.h"
 
 // ---- Configuración de hardware ----
@@ -54,15 +55,22 @@ void loop() {
   mpu.update();
 
   if (BT.available()) {
-    char comando = BT.read();
-    switch (comando) {
-      case 'F': robot->avanzar(200); break;     // Forward
-      case 'B': robot->retroceder(200); break;  // Backward
-      case 'L': robot->girar_izquierda(200); break;
-      case 'R': robot->girar_derecha(200); break;
-      case 'S': robot->detener(); break;        // Stop
-      case '1': robot->girar_a_angulo(90, 180); break;  // Giro 90° derecha
-      case '2': robot->girar_a_angulo(-90, 180); break; // Giro 90° izquierda
+    const char recibido = BT.read();
+    switch (decodificarComando(recibido)) {
+      case ComandoRobot::AVANZAR: robot->avanzar(200); break;
+      case ComandoRobot::RETROCEDER: robot->retroceder(200); break;
+      case ComandoRobot::GIRAR_IZQUIERDA: robot->girar_izquierda(200); break;
+      case ComandoRobot::GIRAR_DERECHA: robot->girar_derecha(200); break;
+      case ComandoRobot::DETENER: robot->detener(); break;
+      case ComandoRobot::GIRAR_90_DERECHA:
+        BT.println(robot->girar_a_angulo(90, 180) ? "Giro completado" : "Giro cancelado por seguridad");
+        break;
+      case ComandoRobot::GIRAR_90_IZQUIERDA:
+        BT.println(robot->girar_a_angulo(-90, 180) ? "Giro completado" : "Giro cancelado por seguridad");
+        break;
+      case ComandoRobot::NINGUNO:
+        if (!esSeparadorComando(recibido)) BT.println("Comando desconocido");
+        break;
     }
   }
 }

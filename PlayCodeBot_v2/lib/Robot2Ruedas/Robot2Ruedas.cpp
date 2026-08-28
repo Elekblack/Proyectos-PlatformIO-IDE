@@ -1,4 +1,11 @@
 #include "Robot2Ruedas.h"
+#include "GiroSeguro.h"
+
+namespace {
+int velocidadValida(int velocidad) {
+  return constrain(velocidad, 0, 255);
+}
+}
 
 // Constructor
 Robot2Ruedas::Robot2Ruedas(int mIzqA, int mIzqB, int mDerA, int mDerB, MPU6050* mpuPtr, Adafruit_SSD1306* oledPtr) {
@@ -18,6 +25,7 @@ Robot2Ruedas::Robot2Ruedas(int mIzqA, int mIzqB, int mDerA, int mDerB, MPU6050* 
 
 // ---- Funciones de movimiento ----
 void Robot2Ruedas::avanzar(int velocidad) {
+  velocidad = velocidadValida(velocidad);
   analogWrite(pinMotorIzqA, velocidad);
   analogWrite(pinMotorIzqB, 0);
   analogWrite(pinMotorDerA, velocidad);
@@ -26,6 +34,7 @@ void Robot2Ruedas::avanzar(int velocidad) {
 }
 
 void Robot2Ruedas::retroceder(int velocidad) {
+  velocidad = velocidadValida(velocidad);
   analogWrite(pinMotorIzqA, 0);
   analogWrite(pinMotorIzqB, velocidad);
   analogWrite(pinMotorDerA, 0);
@@ -34,6 +43,7 @@ void Robot2Ruedas::retroceder(int velocidad) {
 }
 
 void Robot2Ruedas::girar_derecha(int velocidad) {
+  velocidad = velocidadValida(velocidad);
   analogWrite(pinMotorIzqA, velocidad);
   analogWrite(pinMotorIzqB, 0);
   analogWrite(pinMotorDerA, 0);
@@ -42,6 +52,7 @@ void Robot2Ruedas::girar_derecha(int velocidad) {
 }
 
 void Robot2Ruedas::girar_izquierda(int velocidad) {
+  velocidad = velocidadValida(velocidad);
   analogWrite(pinMotorIzqA, 0);
   analogWrite(pinMotorIzqB, velocidad);
   analogWrite(pinMotorDerA, velocidad);
@@ -58,29 +69,41 @@ void Robot2Ruedas::detener() {
 }
 
 // ---- Girar a un ángulo con MPU6050_light ----
-void Robot2Ruedas::girar_a_angulo(float anguloObjetivo, int velocidad) {
+bool Robot2Ruedas::girar_a_angulo(float anguloObjetivo, int velocidad, unsigned long tiempoMaximoMs) {
   mpu->update();
   float anguloInicial = mpu->getAngleZ();
   float anguloActual = anguloInicial;
+  const unsigned long inicio = millis();
 
   if (anguloObjetivo > 0) {
     // Giro a la derecha
     girar_derecha(velocidad);
-    while ((anguloActual - anguloInicial) < anguloObjetivo) {
+    while (evaluarGiro(anguloActual - anguloInicial, anguloObjetivo,
+                       millis() - inicio, tiempoMaximoMs) == EstadoGiro::EN_CURSO) {
       mpu->update();
       anguloActual = mpu->getAngleZ();
+      if (!isfinite(anguloActual)) break;
+      delay(2);
     }
   } else {
     // Giro a la izquierda
     girar_izquierda(velocidad);
-    while ((anguloActual - anguloInicial) > anguloObjetivo) {
+    while (evaluarGiro(anguloActual - anguloInicial, anguloObjetivo,
+                       millis() - inicio, tiempoMaximoMs) == EstadoGiro::EN_CURSO) {
       mpu->update();
       anguloActual = mpu->getAngleZ();
+      if (!isfinite(anguloActual)) break;
+      delay(2);
     }
   }
 
   detener();
-  mostrarMensaje("Giro completo", "Angulo: " + String(anguloObjetivo));
+  const bool completado = isfinite(anguloActual) &&
+      evaluarGiro(anguloActual - anguloInicial, anguloObjetivo,
+                  millis() - inicio, tiempoMaximoMs) == EstadoGiro::COMPLETADO;
+  mostrarMensaje(completado ? "Giro completo" : "Giro cancelado",
+                 "Angulo: " + String(anguloObjetivo));
+  return completado;
 }
 
 // ---- Mostrar mensajes en OLED ----

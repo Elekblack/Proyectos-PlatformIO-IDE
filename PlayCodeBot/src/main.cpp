@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 #include <BluetoothSerial.h>  // Biblioteca para Bluetooth Serial en ESP32
+#include "ComandosRobot.h"
 #include "RobotDosRuedas.h"
 
 // Define los pines (ajusta según tu conexión)
@@ -21,51 +22,56 @@ void setup() {
     Serial.begin(115200);  // Para depuración
     SerialBT.begin("RobotBT");  // Nombre del dispositivo Bluetooth
 
-    robot.inicializar();  // Inicializa el robot y MPU6050
+    const bool mpuDisponible = robot.inicializar();  // Inicializa el robot y MPU6050
 
     Serial.println("Robot listo. Conecta via Bluetooth y envia comandos:");
-    Serial.println("W: Avanzar, S: Retroceder, A: Girar Izq, D: Girar Der, X: Detener");
-    Serial.println("F: Avanzar Recto, 9: Girar 90° Der, 0: Girar 90° Izq");
+    Serial.println("F: Avanzar, B: Retroceder, L: Girar Izq, R: Girar Der, S: Detener");
+    Serial.println("1: Avanzar recto, 2: Girar 90 grados Der, 3: Girar 90 grados Izq");
+    if (!mpuDisponible) {
+        Serial.println("ADVERTENCIA: MPU6050 no disponible; movimientos asistidos deshabilitados");
+    }
 }
 
 void loop() {
     if (SerialBT.available()) {
-        char comando = SerialBT.read();
-        switch (comando) {
-            case 'F':
+        const char recibido = SerialBT.read();
+        switch (decodificarComando(recibido)) {
+            case ComandoRobot::AVANZAR:
                 robot.avanzar(200);  // Velocidad ejemplo
                 SerialBT.println("Avanzando");
                 break;
-            case 'B':
+            case ComandoRobot::RETROCEDER:
                 robot.retroceder(200);
                 SerialBT.println("Retrocediendo");
                 break;
-            case 'R':
+            case ComandoRobot::GIRAR_IZQUIERDA:
                 robot.girarIzquierda(150);
                 SerialBT.println("Girando Izquierda");
                 break;
-            case 'L':
+            case ComandoRobot::GIRAR_DERECHA:
                 robot.girarDerecha(150);
                 SerialBT.println("Girando Derecha");
                 break;
-            case 'S':
+            case ComandoRobot::DETENER:
                 robot.detener();
                 SerialBT.println("Detenido");
                 break;
-            case '1':
-                robot.iniciarAvanzarRecto(200);
-                SerialBT.println("Avanzando Recto");
+            case ComandoRobot::AVANZAR_RECTO:
+                if (robot.iniciarAvanzarRecto(200)) SerialBT.println("Avanzando Recto");
+                else SerialBT.println("Error: MPU6050 no disponible");
                 break;
-            case '2':
-                robot.girarAngulo(90.0);
-                SerialBT.println("Girando 90° Derecha");
+            case ComandoRobot::GIRAR_90_DERECHA:
+                SerialBT.println(robot.girarAngulo(90.0)
+                                     ? "Giro 90 grados Derecha completado"
+                                     : "Error: giro cancelado por seguridad");
                 break;
-            case '3':
-                robot.girarAngulo(-90.0);
-                SerialBT.println("Girando 90° Izquierda");
+            case ComandoRobot::GIRAR_90_IZQUIERDA:
+                SerialBT.println(robot.girarAngulo(-90.0)
+                                     ? "Giro 90 grados Izquierda completado"
+                                     : "Error: giro cancelado por seguridad");
                 break;
-            default:
-                SerialBT.println("Comando desconocido");
+            case ComandoRobot::NINGUNO:
+                if (!esSeparadorComando(recibido)) SerialBT.println("Comando desconocido");
                 break;
         }
     }

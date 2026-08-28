@@ -1,5 +1,6 @@
 // RobotDosRuedas.cpp
 #include "RobotDosRuedas.h"
+#include "GiroSeguro.h"
 
 // Implementación de ControlPID
 ControlPID::ControlPID(float p, float i, float d) : kp(p), ki(i), kd(d), integral(0.0), errorAnterior(0.0), tiempoAnterior(0) {}
@@ -30,11 +31,13 @@ void ControlPID::reiniciar() {
 // Implementación de RobotDosRuedas
 RobotDosRuedas::RobotDosRuedas(int izqAd, int izqAt, int derAd, int derAt)
     : pinIzqAdelante(izqAd), pinIzqAtras(izqAt), pinDerAdelante(derAd), pinDerAtras(derAt),
+      yaw(0.0), yawObjetivo(0.0), yawInicial(0.0), tiempoAnterior(0), offsetGyroZ(0.0),
+      mpuDisponible(false),
       pidGiro(2.0, 0.01, 0.5),  // Valores de tuning para giro (ajustar según pruebas)
       pidRecto(1.5, 0.005, 0.2),  // Valores de tuning para recto (ajustar según pruebas)
-      modoActual(DETENIDO), velocidadActual(0), yaw(0.0), yawObjetivo(0.0), yawInicial(0.0), offsetGyroZ(0.0) {}
+      modoActual(DETENIDO), velocidadActual(0) {}
 
-void RobotDosRuedas::inicializar() {
+bool RobotDosRuedas::inicializar() {
     // Configura pines como salida
     pinMode(pinIzqAdelante, OUTPUT);
     pinMode(pinIzqAtras, OUTPUT);
@@ -46,14 +49,17 @@ void RobotDosRuedas::inicializar() {
 
     // Inicia MPU6050
     mpu.initialize();
-    if (!mpu.testConnection()) {
-        // Error si no conecta, pero por ahora solo continua
+    mpuDisponible = mpu.testConnection();
+    if (!mpuDisponible) {
+        detener();
+        return false;
     }
 
     // Calibra giroscopio
     calibrarGiroscopio();
 
     tiempoAnterior = millis();
+    return true;
 }
 
 void RobotDosRuedas::calibrarGiroscopio() {
@@ -72,6 +78,8 @@ void RobotDosRuedas::actualizarYaw() {
     unsigned long ahora = millis();
     float dt = (ahora - tiempoAnterior) / 1000.0;  // dt en segundos
     tiempoAnterior = ahora;
+
+    if (!mpuDisponible) return;
 
     int16_t gx, gy, gz;
     mpu.getRotation(&gx, &gy, &gz);
@@ -128,21 +136,26 @@ void RobotDosRuedas::detener() {
     establecerVelocidades(0, 0);
 }
 
-void RobotDosRuedas::girarAngulo(float angulo) {
+bool RobotDosRuedas::girarAngulo(float angulo, unsigned long tiempoMaximoMs) {
     // Función bloqueante: gira hasta alcanzar el ángulo
+    if (!mpuDisponible) {
+        detener();
+        return false;
+    }
     actualizarYaw();  // Actualiza yaw actual
     yawObjetivo = yaw + angulo;
     pidGiro.reiniciar();
+    const unsigned long inicio = millis();
 
     float error = yawObjetivo - yaw;
-    while (abs(error) > 1.0) {  // Umbral de 1 grado
+    while (evaluarGiro(error, millis() - inicio, tiempoMaximoMs) == EstadoGiro::EN_CURSO) {
         actualizarYaw();
         error = yawObjetivo - yaw;
         float salida = pidGiro.calcular(yaw, yawObjetivo);
 
-        // Salida PID controla la velocidad de giro (positiva para derecha)
+        // El error actual decide la dirección para corregir también un sobrepaso.
         int velGiro = constrain(abs(salida), 0, 255);
-        if (angulo > 0) {  // Giro derecha
+        if (direccionGiro(error) > 0) {  // Giro derecha
             establecerVelocidades(velGiro, -velGiro);
         } else {  // Giro izquierda
             establecerVelocidades(-velGiro, velGiro);
@@ -151,22 +164,28 @@ void RobotDosRuedas::girarAngulo(float angulo) {
         delay(10);  // Frecuencia de control ~100Hz
     }
     detener();  // Detiene al finalizar
+    return evaluarGiro(error, millis() - inicio, tiempoMaximoMs) == EstadoGiro::COMPLETADO;
 }
 
-void RobotDosRuedas::iniciarAvanzarRecto(int velocidad) {
+bool RobotDosRuedas::iniciarAvanzarRecto(int velocidad) {
+    if (!mpuDisponible) {
+        detener();
+        return false;
+    }
     modoActual = AVANZAR_RECTO;
     velocidadActual = constrain(velocidad, 0, 255);
     actualizarYaw();  // Actualiza yaw actual
     yawInicial = yaw;
     pidRecto.reiniciar();
+    return true;
 }
 
 void RobotDosRuedas::actualizar() {
+    if (!mpuDisponible) return;
     actualizarYaw();  // Siempre actualiza yaw
 
     switch (modoActual) {
         case AVANZAR_RECTO: {
-            float error = yawInicial - yaw;
             float salida = pidRecto.calcular(yaw, yawInicial);
 
             // Salida PID es corrección diferencial
