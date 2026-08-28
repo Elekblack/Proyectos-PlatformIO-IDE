@@ -57,6 +57,10 @@
 SPIClass tftSPI = SPIClass(FSPI);
 Adafruit_ST7735 tft = Adafruit_ST7735(&tftSPI, TFT_CS, TFT_DC, TFT_RST);
 
+// Se dibuja primero en RAM y luego se envia el fotograma completo a la TFT.
+// Esto evita que se vea el borrado de la pantalla y elimina el parpadeo.
+GFXcanvas16 frameBuffer(160, 128);
+
 // Tras rotation(1) la pantalla queda en modo horizontal (apaisada)
 int SCREEN_W = 160;
 int SCREEN_H = 128;
@@ -88,6 +92,15 @@ const int PLAYER_H_DUCK = 9;
 
 const float GRAVITY       = 0.9f;
 const float JUMP_VELOCITY = -9.6f;
+const unsigned long FRAME_TIME_MS = 33; // Limite cercano a 30 FPS
+
+// Ajustes principales de dificultad. Modifica estos valores, no la variable
+// gameSpeed que aparece mas abajo, porque resetGame() reinicia cada partida.
+const float INITIAL_GAME_SPEED = 2.20f;
+const float MAX_GAME_SPEED     = 3.40f;
+const float SPEED_INCREMENT    = 0.0008f;
+const unsigned long INITIAL_SPAWN_INTERVAL = 1650;
+const unsigned long MIN_SPAWN_INTERVAL     = 1050;
 
 const int JOY_CENTER   = 2048;   // ADC 12 bits en ESP32-S3 (0-4095)
 const int JOY_DEADZONE = 700;
@@ -139,12 +152,12 @@ Coin coins[MAX_COINS];
 // --------------------------------------------------------------------
 //  Variables de juego
 // --------------------------------------------------------------------
-float gameSpeed        = 2.4f;
+float gameSpeed        = INITIAL_GAME_SPEED;
 unsigned long score    = 0;
 unsigned long highScore = 0;
 unsigned long lastFrameTime = 0;
 unsigned long lastSpawnTime = 0;
-unsigned long spawnInterval = 1400;
+unsigned long spawnInterval = INITIAL_SPAWN_INTERVAL;
 int groundScrollX = 0;
 
 bool prevButtonState = HIGH;
@@ -168,6 +181,7 @@ void drawGround();
 void drawStartScreen();
 void drawGameOverScreen();
 void drawHUD();
+void presentFrame();
 
 // =====================================================================
 //  SETUP
@@ -204,8 +218,18 @@ void setup() {
 // =====================================================================
 void loop() {
   unsigned long now = millis();
-  float dt = (now - lastFrameTime) / 16.0f;   // dt normalizado a ~60 FPS
-  if (dt > 3.0f) dt = 3.0f;                   // evita saltos grandes
+  unsigned long elapsed = now - lastFrameTime;
+
+  // Mantiene una cadencia estable. La fisica queda independiente del tiempo
+  // que tarde la pantalla en recibir el fotograma anterior.
+  if (elapsed < FRAME_TIME_MS) {
+    delay(FRAME_TIME_MS - elapsed);
+    now = millis();
+    elapsed = now - lastFrameTime;
+  }
+
+  float dt = elapsed / (float)FRAME_TIME_MS;
+  if (dt > 2.0f) dt = 2.0f;
   lastFrameTime = now;
 
   bool jumpPressed, ducking;
@@ -217,7 +241,6 @@ void loop() {
       if (jumpPressed) {
         resetGame();
         gameState = PLAYING;
-        tft.fillScreen(COLOR_SKY);
       }
       break;
 
@@ -238,12 +261,10 @@ void loop() {
       if (jumpPressed) {
         resetGame();
         gameState = PLAYING;
-        tft.fillScreen(COLOR_SKY);
       }
       break;
   }
 
-  delay(16);   // ~60 FPS aprox.
 }
 
 // =====================================================================
@@ -278,8 +299,8 @@ void resetGame() {
   for (int i = 0; i < MAX_COINS; i++) coins[i].active = false;
 
   score = 0;
-  gameSpeed = 2.4f;
-  spawnInterval = 1400;
+  gameSpeed = INITIAL_GAME_SPEED;
+  spawnInterval = INITIAL_SPAWN_INTERVAL;
   lastSpawnTime = millis();
   groundScrollX = 0;
 }
@@ -310,8 +331,9 @@ void updatePlaying(float dt, bool jumpPressed, bool ducking) {
   }
 
   // --- Dificultad progresiva ---
-  gameSpeed += 0.0015f * dt;
-  if (spawnInterval > 750) spawnInterval -= (unsigned long)(0.4f * dt);
+  gameSpeed = min(MAX_GAME_SPEED, gameSpeed + SPEED_INCREMENT * dt);
+  spawnInterval = max(MIN_SPAWN_INTERVAL,
+                      INITIAL_SPAWN_INTERVAL - min(score, 600UL));
 
   // --- Scroll del piso (efecto visual) ---
   groundScrollX -= (int)(gameSpeed * dt);
@@ -434,9 +456,7 @@ bool checkCollision() {
 //  DIBUJO
 // =====================================================================
 void drawGame() {
-  // Redibujo simple con "borrado" del fondo cada frame (pantalla pequeña,
-  // suficientemente rápido con SPI a alta velocidad en ESP32-S3).
-  tft.fillRect(0, 0, SCREEN_W, GROUND_Y, COLOR_SKY);
+  frameBuffer.fillScreen(COLOR_SKY);
   drawGround();
 
   for (int i = 0; i < MAX_OBSTACLES; i++) {
@@ -448,12 +468,13 @@ void drawGame() {
 
   drawPlayer();
   drawHUD();
+  presentFrame();
 }
 
 void drawGround() {
-  tft.fillRect(0, GROUND_Y, SCREEN_W, SCREEN_H - GROUND_Y, COLOR_GROUND);
+  frameBuffer.fillRect(0, GROUND_Y, SCREEN_W, SCREEN_H - GROUND_Y, COLOR_GROUND);
   for (int x = groundScrollX; x < SCREEN_W; x += 8) {
-    tft.drawFastVLine(x, GROUND_Y, 3, COLOR_GROUND2);
+    frameBuffer.drawFastVLine(x, GROUND_Y, 3, COLOR_GROUND2);
   }
 }
 
@@ -464,100 +485,106 @@ void drawPlayer() {
 
   if (player.ducking) {
     // Personaje agachado (más ancho, más bajo)
-    tft.fillRect(x - 1, y + 2, PLAYER_W + 2, h - 2, COLOR_BLUE);
-    tft.fillRect(x, y, PLAYER_W, 4, COLOR_RED);
+    frameBuffer.fillRect(x - 1, y + 2, PLAYER_W + 2, h - 2, COLOR_BLUE);
+    frameBuffer.fillRect(x, y, PLAYER_W, 4, COLOR_RED);
   } else {
     // Gorra
-    tft.fillRect(x, y, PLAYER_W, 4, COLOR_RED);
+    frameBuffer.fillRect(x, y, PLAYER_W, 4, COLOR_RED);
     // Cara
-    tft.fillRect(x + 1, y + 4, PLAYER_W - 2, 4, COLOR_SKIN);
+    frameBuffer.fillRect(x + 1, y + 4, PLAYER_W - 2, 4, COLOR_SKIN);
     // Overol
-    tft.fillRect(x, y + 8, PLAYER_W, h - 8, COLOR_BLUE);
+    frameBuffer.fillRect(x, y + 8, PLAYER_W, h - 8, COLOR_BLUE);
     // Botones
-    tft.drawPixel(x + 3, y + 10, COLOR_WHITE);
-    tft.drawPixel(x + PLAYER_W - 4, y + 10, COLOR_WHITE);
+    frameBuffer.drawPixel(x + 3, y + 10, COLOR_WHITE);
+    frameBuffer.drawPixel(x + PLAYER_W - 4, y + 10, COLOR_WHITE);
   }
 }
 
 void drawObstacle(Obstacle &o) {
   int x = (int)o.x;
   if (o.type == OBST_PIPE) {
-    tft.fillRect(x, GROUND_Y - o.h, o.w, o.h, COLOR_PIPE);
-    tft.fillRect(x - 1, GROUND_Y - o.h, o.w + 2, 4, COLOR_PIPE_DK);
+    frameBuffer.fillRect(x, GROUND_Y - o.h, o.w, o.h, COLOR_PIPE);
+    frameBuffer.fillRect(x - 1, GROUND_Y - o.h, o.w + 2, 4, COLOR_PIPE_DK);
   } else {
     // Pájaro simple: cuerpo + alas en "V"
     int y = o.flyY;
-    tft.fillCircle(x + o.w / 2, y + o.h / 2, 4, COLOR_BIRD);
-    tft.drawLine(x, y, x + o.w / 2, y + o.h / 2, COLOR_BLACK);
-    tft.drawLine(x + o.w, y, x + o.w / 2, y + o.h / 2, COLOR_BLACK);
+    frameBuffer.fillCircle(x + o.w / 2, y + o.h / 2, 4, COLOR_BIRD);
+    frameBuffer.drawLine(x, y, x + o.w / 2, y + o.h / 2, COLOR_BLACK);
+    frameBuffer.drawLine(x + o.w, y, x + o.w / 2, y + o.h / 2, COLOR_BLACK);
   }
 }
 
 void drawCoin(Coin &c) {
-  tft.fillCircle((int)c.x, (int)c.y, 4, COLOR_COIN);
-  tft.drawCircle((int)c.x, (int)c.y, 4, COLOR_GROUND2);
+  frameBuffer.fillCircle((int)c.x, (int)c.y, 4, COLOR_COIN);
+  frameBuffer.drawCircle((int)c.x, (int)c.y, 4, COLOR_GROUND2);
 }
 
 void drawHUD() {
-  tft.fillRect(0, 0, SCREEN_W, 12, COLOR_BLACK);
-  tft.setTextSize(1);
-  tft.setTextColor(COLOR_WHITE);
-  tft.setCursor(2, 2);
-  tft.print("Puntos: ");
-  tft.print(score);
+  frameBuffer.fillRect(0, 0, SCREEN_W, 12, COLOR_BLACK);
+  frameBuffer.setTextSize(1);
+  frameBuffer.setTextColor(COLOR_WHITE);
+  frameBuffer.setCursor(2, 2);
+  frameBuffer.print("Puntos: ");
+  frameBuffer.print(score);
 
-  tft.setCursor(SCREEN_W - 60, 2);
-  tft.print("Max: ");
-  tft.print(highScore);
+  frameBuffer.setCursor(SCREEN_W - 60, 2);
+  frameBuffer.print("Max: ");
+  frameBuffer.print(highScore);
 }
 
 // =====================================================================
 //  PANTALLAS DE INICIO / FIN DE JUEGO
 // =====================================================================
 void drawStartScreen() {
-  tft.fillScreen(COLOR_SKY);
+  frameBuffer.fillScreen(COLOR_SKY);
   drawGround();
 
-  tft.setTextColor(COLOR_WHITE);
-  tft.setTextSize(2);
-  tft.setCursor(18, 30);
-  tft.print("MINI MARIO");
+  frameBuffer.setTextColor(COLOR_WHITE);
+  frameBuffer.setTextSize(2);
+  frameBuffer.setCursor(18, 30);
+  frameBuffer.print("MINI MARIO");
 
-  tft.setTextSize(1);
-  tft.setCursor(20, 60);
-  tft.print("Presiona el boton");
-  tft.setCursor(30, 72);
-  tft.print("del joystick");
+  frameBuffer.setTextSize(1);
+  frameBuffer.setCursor(20, 60);
+  frameBuffer.print("Presiona el boton");
+  frameBuffer.setCursor(30, 72);
+  frameBuffer.print("del joystick");
 
-  tft.setCursor(10, 95);
-  tft.setTextColor(COLOR_BLACK);
-  tft.print("Abajo = agacharse");
+  frameBuffer.setCursor(10, 95);
+  frameBuffer.setTextColor(COLOR_BLACK);
+  frameBuffer.print("Abajo = agacharse");
 
   // Personajito de portada
   player.y = GROUND_Y - PLAYER_H_NORM;
   player.ducking = false;
   drawPlayer();
+  presentFrame();
 }
 
 void drawGameOverScreen() {
-  tft.fillRect(10, 30, SCREEN_W - 20, 60, COLOR_BLACK);
-  tft.drawRect(10, 30, SCREEN_W - 20, 60, COLOR_WHITE);
+  frameBuffer.fillRect(10, 30, SCREEN_W - 20, 60, COLOR_BLACK);
+  frameBuffer.drawRect(10, 30, SCREEN_W - 20, 60, COLOR_WHITE);
 
-  tft.setTextColor(COLOR_RED);
-  tft.setTextSize(2);
-  tft.setCursor(24, 38);
-  tft.print("GAME OVER");
+  frameBuffer.setTextColor(COLOR_RED);
+  frameBuffer.setTextSize(2);
+  frameBuffer.setCursor(24, 38);
+  frameBuffer.print("GAME OVER");
 
-  tft.setTextColor(COLOR_WHITE);
-  tft.setTextSize(1);
-  tft.setCursor(24, 62);
-  tft.print("Puntos: ");
-  tft.print(score);
+  frameBuffer.setTextColor(COLOR_WHITE);
+  frameBuffer.setTextSize(1);
+  frameBuffer.setCursor(24, 62);
+  frameBuffer.print("Puntos: ");
+  frameBuffer.print(score);
 
-  tft.setCursor(24, 74);
-  tft.print("Maximo: ");
-  tft.print(highScore);
+  frameBuffer.setCursor(24, 74);
+  frameBuffer.print("Maximo: ");
+  frameBuffer.print(highScore);
 
-  tft.setCursor(18, 100);
-  tft.print("Boton = reintentar");
+  frameBuffer.setCursor(18, 100);
+  frameBuffer.print("Boton = reintentar");
+  presentFrame();
+}
+
+void presentFrame() {
+  tft.drawRGBBitmap(0, 0, frameBuffer.getBuffer(), SCREEN_W, SCREEN_H);
 }
